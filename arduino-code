@@ -1,0 +1,1075 @@
+#include <WiFi.h>
+#include <AsyncTCP.h>
+#include <WiFiMulti.h>
+#include <ESPAsyncWebServer.h>
+#include <LiquidCrystal_I2C.h>
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+
+#define DHTPIN 15
+#define DHTTYPE DHT22
+
+DHT dht(DHTPIN, DHTTYPE);
+
+float t = 0.0;
+float h = 0.0;
+
+const long interval = 10000;
+
+int lcdColumns = 16;
+int lcdRows = 2;
+
+LiquidCrystal_I2C lcd(0x27, lcdColumns, lcdRows);
+
+WiFiMulti wifiMulti;
+const uint32_t connectTimeoutMs = 10000;
+
+const char* PARAM_INPUT_1 = "state1";
+const char* PARAM_INPUT_2 = "state2";
+const char* PARAM_INPUT_3 = "state3";
+const char* PARAM_INPUT_4 = "state4";
+const char* PARAM_INPUT_5 = "state5";
+
+const int relay1 = 17;
+const int relay2 = 16;
+const int relay3 = 4;
+const int relay4 = 2;
+const int relay5 = 15;
+
+const int switch1 = 27;
+const int switch2 = 26;
+const int switch3 = 14;
+const int switch4 = 33;
+const int switch5 = 25;
+
+int relay_1_status = LOW;
+int relay_2_status = LOW;
+int relay_3_status = LOW;
+int relay_4_status = LOW;
+int relay_5_status = LOW;
+
+int switch_1_status;
+int switch_2_status;
+int switch_3_status;
+int switch_4_status;
+int switch_5_status;
+
+int last_switch_1_status = LOW;
+int last_switch_2_status = LOW;
+int last_switch_3_status = LOW;
+int last_switch_4_status = LOW;
+int last_switch_5_status = LOW;
+
+unsigned long lastDebounceTime = 0;
+unsigned long lastlcdDelay = 0;
+unsigned long previousMillis = 0;
+unsigned long lastExecutedMillis = 0;
+unsigned long count = 0;
+int debounceDelay = 10;
+
+AsyncWebServer server(80);
+
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Percobaan</title>
+    <style>
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background-color: #f7f7e2;
+            align-items: center;
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0px;
+        }
+
+        img {
+            width: 70px;
+            height: auto;
+        }
+
+        .logo2 {
+            display: flex;
+            justify-content: center;
+            gap: 100px;
+        }
+
+        .jiof {
+            border: solid #866a59;
+            margin-bottom: 20px;
+            text-align: center;
+            border-radius: 6px;
+            width: 350px;
+        }
+
+        .container {
+            display: flex;
+            background-color: #c4bd9a;
+            justify-content: center;
+            border-radius: 20px;
+        }
+
+        .box {
+            display: flex;
+            background-color: #866a59;
+            flex-direction: column;
+            border-radius: 5px;
+            width: 125px;
+            height: 125px;
+            justify-content: center;
+        }
+
+        .jumlah {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;          
+            margin: 10px;
+        }
+
+        .iof {
+            margin: 2rem;
+            padding: 2px;
+        }
+
+        .angka {
+            color: #f7f7e2;
+            margin: 1rem;
+            font-size: 20pt;
+            text-align: center;
+        }
+
+        .tulisan {
+            color: #f7f7e2;
+            text-align: center;
+        }
+
+        .sensorx {
+            display: flex;
+            border-radius: 5px;
+            gap: 20px;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .x {
+            display: flex;
+        }
+
+        .box2 {
+            text-align: center;
+            background-color: #866a59;
+            flex-direction: column;
+            border-radius: 5px;
+            width: 125px;
+            height: 125px;
+            justify-content: center;
+        }
+
+        .ccc {
+            display: flex;
+            gap: 30px;
+            padding: 10px;
+        }
+
+        article {
+            display: flex;
+            gap: 10%;
+            justify-content: center;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 88px;
+            height: 30px
+        }
+
+        .switch input {
+            display: none
+        }
+
+        .slider {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #866a59;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 8px;
+            bottom: 5px;
+            background-color: #2e333b;
+            -webkit-transition: .4s;
+            transition: .4s;
+            border-radius: 68px
+        }
+
+        input:checked+.slider {
+            background-color: #f7f7e2;
+        }
+
+        input:checked+.slider:before {
+            -webkit-transform: translateX(52px);
+            -ms-transform: translateX(52px);
+            transform: translateX(52px)
+        }
+
+        .footer {
+            position: absolute;
+            bottom: 0;
+            padding: 10px;
+            background-color: #2e333b;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .box-footer {
+            font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+            font-size: 12px;
+            margin-left: 20px;
+            margin-right: 20px;
+        }
+
+        .box-footer p {
+            color: #fff;
+        }
+
+        .box-tombol {
+            width: 150px;
+            margin: 10px auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .output {
+            display: flex;
+            justify-content: center;
+            flex-direction: column;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .units {
+            color: #f7f7e2;
+            font-size: 16px;
+        }
+
+        .dht-labels {
+            color: #f7f7e2;
+            font-size: 16px;
+            vertical-align: middle;
+            padding-bottom: 15px;
+        }
+
+        .white{
+            margin: 10px;
+            color: #f7f7e2;
+        }
+
+        h1 {
+            color: #2e333b;
+        }
+
+        h2 {
+            color: #2e333b;
+        }
+
+        h4 {
+            color: #2e333b;
+        }
+
+        @media (max-width: 800px) {
+            article {
+                flex-direction: column;
+            }
+
+            .iof {
+                margin: 2rem auto;
+            }
+
+            .jiof {
+                width: 300px;
+            }
+
+            .x {
+                flex-direction: column;
+            }
+
+            .jumlah {
+                flex-direction: row;
+                margin: 10px auto;
+            }
+
+            .logo2 {
+                flex-direction: column;
+                align-items: center;
+                padding: 10px;
+                text-align: center;
+                gap: 20px;
+            }
+
+            .ccc {
+                gap: 100px;
+            }
+
+            .footer {
+                position: static;
+            }
+
+            .container{
+                border-radius: 0px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="judul">
+        <div class="border">
+            <div class="logo2">
+                <div class="ccc">
+                    <div class="unj">
+                        <img src="https://fe.unj.ac.id/wp-content/uploads/2019/07/cropped-Logo-unj.png" alt="Logo UNJ">
+                    </div>
+                    <div class="brin">
+                        <img src="https://blogger.googleusercontent.com/img/a/AVvXsEhyntl1oaEFJd4n622fAsBOjLWdGOfYJAMzZDinJZeCbAVoPnG_8Vgo-ij2ZfLOe2XbjcxG3Z3mgWXOCPxboE13bqNP6tpbYtfN1yM1iACpYPkU19vRq9GvkHFwjepDpzXhLlsrZ8ajAfMcGuFTIrwNanfh-V967bwzh1d95iIn6E-cyt0PMNJeRDtHtw=w320-h320"
+                            alt="logo brin">
+                    </div>
+                </div>
+                <h1>Monitoring Mesin Tetas dan In Ovo Feeding</h1>
+            </div>
+        </div>
+    </div>
+    <article>
+        <div class="container">
+            <div class="iof">
+                <div class="jiof">
+                    <h2>In Ovo Feeding</h2>
+                </div>
+                <div class="x">
+                    <div class="jumlah">
+                        <div class="box">
+                            <div class="angka" id="jumlahtelur">
+                                %jumlahtelur%
+                            </div>
+                            <div class="tulisan">
+                                Jumlah Telur
+                            </div>
+                        </div>
+                    </div>
+                    <div class="box-tombol">
+                        <div class="output">
+                            %BUTTON1%
+                        </div>
+                        <div class="output">
+                            %BUTTON2%
+                        </div>
+                        <div class="output">
+                            %BUTTON3%
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!--
+        <div class="container">
+            <div class="iof">
+                <div class="jiof">
+                    <h2>Mesin Penetasan</h2>
+                </div>
+                <div class="x">
+                    <div class="jumlah">
+                        <div class="box">
+                            <div class="angka" id="temperature">
+                                %TEMPERATURE%
+                            </div>
+                            <div class="tulisan">
+                                Suhu
+                            </div>
+                        </div>
+                        <div class="box">
+                            <div class="angka" id="humidity">
+                                %HUMIDITY%
+                            </div>
+                            <div class="tulisan">
+                                Kelembapan
+                            </div>
+                        </div>
+                    </div>
+                    <div class="box-tombol">
+                        <div class="output">
+                            %BUTTON4%
+                        </div>
+                        <div class="output">
+                            %BUTTON5%
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        -->
+    </article>
+    <div class="footer">
+        <div class="box-footer">
+            <p>Alviansyah Oktario Pratama</p>
+            <p>1513617028</p>
+        </div>
+        <div class="box-footer">
+            <p>Dospem 1: Muhammad Yusro</p>
+            <p>Dospem 2: Baso Marudani</p>
+        </div>
+    </div>
+    <script>
+        function toggleCheckbox(element) {
+            var xhr = new XMLHttpRequest();
+            if (element.checked) {
+                xhr.open("GET", "/update?state1=1", true);
+            }
+            else {
+                xhr.open("GET", "/update?state1=0", true);
+            }
+            xhr.send();
+        }
+
+        function toggleCheckbox2(element) {
+            var xhr2 = new XMLHttpRequest();
+            if (element.checked) {
+                xhr2.open("GET", "/update?state2=1", true);
+            }
+            else {
+                xhr2.open("GET", "/update?state2=0", true);
+            }
+            xhr2.send();
+        }
+
+        function toggleCheckbox3(element) {
+            var xhr3 = new XMLHttpRequest();
+            if (element.checked) {
+                xhr3.open("GET", "/update?state3=1", true);
+            }
+            else {
+                xhr3.open("GET", "/update?state3=0", true);
+            }
+            xhr3.send();
+        }
+
+        function toggleCheckbox4(element) {
+            var xhr4 = new XMLHttpRequest();
+            if (element.checked) {
+                xhr4.open("GET", "/update?state4=1", true);
+            }
+            else {
+                xhr4.open("GET", "/update?state4=0", true);
+            }
+            xhr4.send();
+        }
+
+        function toggleCheckbox5(element) {
+            var xhr5 = new XMLHttpRequest();
+            if (element.checked) {
+                xhr5.open("GET", "/update?state5=1", true);
+            }
+            else {
+                xhr5.open("GET", "/update?state5=0", true);
+            }
+            xhr5.send();
+        }
+        
+        setInterval(function () {
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function () {
+                if (this.readyState == 4 && this.status == 200) {
+                    var inputChecked;
+                    var outputStateM;
+
+                    if (this.responseText == 1) {
+                        inputChecked = true;
+                        outputStateM = "ON";
+                    }
+                    else {
+                        inputChecked = false;
+                        outputStateM = "OFF";
+                    }
+                    document.getElementById("output").checked = inputChecked;
+                    document.getElementById("outputState").innerHTML = outputStateM;
+                }
+            }
+            xhttp.open("GET", "/state1", true);
+            xhttp.send();
+
+            var xhttp2 = new XMLHttpRequest();
+            xhttp2.onreadystatechange = function () {
+                if (this.readyState == 4 && this.status == 200) {
+                    var inputChecked2;
+                    var outputStateM2;
+
+                    if (this.responseText == 1) {
+                        inputChecked2 = true;
+                        outputStateM2 = "ON";
+                    }
+                    else {
+                        inputChecked2 = false;
+                        outputStateM2 = "OFF";
+                    }
+                    document.getElementById("output2").checked = inputChecked2;
+                    document.getElementById("outputState2").innerHTML = outputStateM2;
+                }
+            };
+            xhttp2.open("GET", "/state2", true);
+            xhttp2.send();
+
+            var xhttp3 = new XMLHttpRequest();
+            xhttp3.onreadystatechange = function () {
+                if (this.readyState == 4 && this.status == 200) {
+                    var inputChecked3;
+                    var outputStateM3;
+
+                    if (this.responseText == 1) {
+                        inputChecked3 = true;
+                        outputStateM3 = "ON";
+                    }
+                    else {
+                        inputChecked3 = false;
+                        outputStateM3 = "OFF";
+                    }
+                    document.getElementById("output3").checked = inputChecked3;
+                    document.getElementById("outputState3").innerHTML = outputStateM3;
+                }
+            };
+            xhttp3.open("GET", "/state3", true);
+            xhttp3.send();
+
+            var xhttp4 = new XMLHttpRequest();
+            xhttp4.onreadystatechange = function () {
+                if (this.readyState == 4 && this.status == 200) {
+                    var inputChecked4;
+                    var outputStateM4;
+
+                    if (this.responseText == 1) {
+                        inputChecked4 = true;
+                        outputStateM4 = "ON";
+                    }
+                    else {
+                        inputChecked4 = false;
+                        outputStateM4 = "OFF";
+                    }
+                    document.getElementById("output4").checked = inputChecked4;
+                    document.getElementById("outputState4").innerHTML = outputStateM4;
+                }
+            };
+            xhttp4.open("GET", "/state4", true);
+            xhttp4.send();
+
+            var xhttp5 = new XMLHttpRequest();
+            xhttp5.onreadystatechange = function () {
+                if (this.readyState == 4 && this.status == 200) {
+                    var inputChecked5;
+                    var outputStateM5;
+
+                    if (this.responseText == 1) {
+                        inputChecked5 = true;
+                        outputStateM5 = "ON";
+                    }
+                    else {
+                        inputChecked5 = false;
+                        outputStateM5 = "OFF";
+                    }
+                    document.getElementById("output5").checked = inputChecked5;
+                    document.getElementById("outputState5").innerHTML = outputStateM5;
+                }
+            };
+            xhttp5.open("GET", "/state5", true);
+            xhttp5.send();
+
+            var xhttptelur = new XMLHttpRequest();
+            xhttptelur.onreadystatechange = function () {
+                if (this.readyState == 4 && this.status == 200) {
+                    document.getElementById("jumlahtelur").innerHTML = this.responseText;
+                }
+            };
+            xhttptelur.open("GET", "/jumlahtelur", true);
+            xhttptelur.send();
+
+            var xhttpsuhu = new XMLHttpRequest();
+            xhttpsuhu.onreadystatechange = function () {
+                if (this.readyState == 4 && this.status == 200) {
+                    document.getElementById("temperature").innerHTML = this.responseText;
+                }
+            };
+            xhttpsuhu.open("GET", "/temperature", true);
+            xhttpsuhu.send();
+
+            var xhttpkelembapan = new XMLHttpRequest();
+            xhttpkelembapan.onreadystatechange = function () {
+                if (this.readyState == 4 && this.status == 200) {
+                    document.getElementById("humidity").innerHTML = this.responseText;
+                }
+            };
+            xhttpkelembapan.open("GET", "/humidity", true);
+            xhttpkelembapan.send();
+
+        }, 500);
+    </script>
+</body>
+
+</html>
+)rawliteral";
+
+String outputState() {
+  if (digitalRead(relay1)) {
+    return "checked";
+  } else {
+    return "";
+  }
+  return "";
+}
+
+String outputState2() {
+  if (digitalRead(relay2)) {
+    return "checked";
+  } else {
+    return "";
+  }
+  return "";
+}
+
+String outputState3() {
+  if (digitalRead(relay3)) {
+    return "checked";
+  } else {
+    return "";
+  }
+  return "";
+}
+
+String outputState4() {
+  if (digitalRead(relay4)) {
+    return "checked";
+  } else {
+    return "";
+  }
+  return "";
+}
+
+String outputState5() {
+  if (digitalRead(relay5)) {
+    return "checked";
+  } else {
+    return "";
+  }
+
+  return "";
+}
+
+String processor(const String& var) {
+  //Serial.println(var);
+  if (var == "BUTTON1") {
+    String buttons1 = "";
+    String outputStateValue = outputState();
+    buttons1 += "<h4 style=\"text-align: center; width: 140px;\">ON/OFF - Status <span id=\"outputState\"><span></h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"output\" " + outputStateValue + "><span class=\"slider\"></span></label>";
+    return buttons1;
+  }
+
+  if (var == "BUTTON2") {
+    String buttons2 = "";
+    String outputStateValue2 = outputState2();
+    buttons2 += "<h4 style=\"text-align: center; width: 140px;\">Conveyor - Status <span id=\"outputState2\"><span></h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox2(this)\" id=\"output2\" " + outputStateValue2 + "><span class=\"slider\"></span></label>";
+    return buttons2;
+  }
+
+  if (var == "BUTTON3") {
+    String buttons3 = "";
+    String outputStateValue3 = outputState3();
+    buttons3 += "<h4 style=\"text-align: center; width: 140px;\">Lampu UV - Status <span id=\"outputState3\"><span></h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox3(this)\" id=\"output3\" " + outputStateValue3 + "><span class=\"slider\"></span></label>";
+    return buttons3;
+  }
+
+  if (var == "BUTTON4") {
+    String buttons4 = "";
+    String outputStateValue4 = outputState4();
+    buttons4 += "<h4 style=\"text-align: center; width: 120px;\">Kipas - Status <span id=\"outputState4\"><span></h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox4(this)\" id=\"output4\" " + outputStateValue4 + "><span class=\"slider\"></span></label>";
+    return buttons4;
+  }
+
+  if (var == "BUTTON5") {
+    String buttons5 = "";
+    String outputStateValue5 = outputState5();
+    buttons5 += "<h4 style=\"text-align: center; width: 130px;\">Lampu - Status <span id=\"outputState5\"><span></h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox5(this)\" id=\"output5\" " + outputStateValue5 + "><span class=\"slider\"></span></label>";
+    return buttons5;
+  }
+
+  if (var == "TEMPERATURE") {
+    return String(t);
+  } else if (var == "HUMIDITY") {
+    return String(h);
+  }
+
+  if (var == "jumlahtelur") {
+    return String(count);
+  }
+
+  return String();
+}
+
+TaskHandle_t Task1;
+
+void Task1code(void* parameter) {
+  for (;;) {
+    if (digitalRead(13) == HIGH) {
+      digitalWrite(19, HIGH);
+      delay(1000);
+      digitalWrite(18, HIGH);
+      delay(1000);
+      digitalWrite(5, HIGH);
+      delay(1000);
+      digitalWrite(19, LOW);
+      digitalWrite(18, LOW);
+      digitalWrite(5, LOW);
+      delay(1000);
+    }
+    delay(1);
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.mode(WIFI_STA);
+  dht.begin();
+
+  wifiMulti.addAP("Obey", "mieayam123");
+  wifiMulti.addAP("alvin_alvina@home", "qwertyuiop123");
+
+  xTaskCreatePinnedToCore(Task1code, "Task1", 10000, NULL, 1, &Task1, 0);
+
+  pinMode(switch1, INPUT);
+  pinMode(switch2, INPUT);
+  pinMode(switch3, INPUT);
+  pinMode(switch4, INPUT);
+  pinMode(switch5, INPUT);
+  pinMode(13, INPUT);
+  pinMode(12, INPUT);
+  pinMode(35, INPUT);
+  pinMode(32, INPUT);
+  pinMode(34, INPUT);
+
+  pinMode(relay1, OUTPUT);
+  pinMode(relay2, OUTPUT);
+  pinMode(relay3, OUTPUT);
+  pinMode(relay4, OUTPUT);
+  pinMode(relay5, OUTPUT);
+  pinMode(19, OUTPUT);
+  pinMode(18, OUTPUT);
+  pinMode(5, OUTPUT);
+
+  digitalWrite(relay1, LOW);
+  digitalWrite(relay2, LOW);
+  digitalWrite(relay3, LOW);
+  digitalWrite(relay4, LOW);
+  digitalWrite(relay5, LOW);
+
+  int n = WiFi.scanNetworks();
+  Serial.println("scan done");
+  if (n == 0) {
+    Serial.println("no networks found");
+  } else {
+    Serial.print(n);
+    Serial.println(" networks found");
+    for (int i = 0; i < n; ++i) {
+      // Print SSID and RSSI for each network found
+      Serial.print(i + 1);
+      Serial.print(": ");
+      Serial.print(WiFi.SSID(i));
+      Serial.print(" (");
+      Serial.print(WiFi.RSSI(i));
+      Serial.print(")");
+      Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " " : "*");
+      delay(10);
+    }
+  }
+  if (wifiMulti.run(connectTimeoutMs) == WL_CONNECTED) {
+    Serial.print("WiFi connected: ");
+    Serial.print(WiFi.SSID());
+    Serial.print(" ");
+    Serial.println(WiFi.RSSI());
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("WiFi not connected!");
+  }
+
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("WiFi connected: ");
+  lcd.setCursor(0, 1);
+  lcd.print(WiFi.SSID());
+
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send_P(200, "text/html", index_html, processor);
+  });
+
+  server.on("/update", HTTP_GET, [](AsyncWebServerRequest* request) {
+    String inputMessage;
+    String inputParam;
+    if (request->hasParam(PARAM_INPUT_1)) {
+      inputMessage = request->getParam(PARAM_INPUT_1)->value();
+      inputParam = PARAM_INPUT_1;
+      digitalWrite(relay1, inputMessage.toInt());
+      relay_1_status = !relay_1_status;
+    } else {
+      inputMessage = "No message sent";
+      inputParam = "none";
+    }
+    Serial.println(inputMessage);
+    request->send(200, "text/plain", "OK");
+
+    String inputMessage2;
+    String inputParam2;
+
+    if (request->hasParam(PARAM_INPUT_2)) {
+      inputMessage2 = request->getParam(PARAM_INPUT_2)->value();
+      inputParam2 = PARAM_INPUT_2;
+      digitalWrite(relay2, inputMessage2.toInt());
+      relay_2_status = !relay_2_status;
+    } else {
+      inputMessage2 = "No message sent";
+      inputParam2 = "none";
+    }
+    Serial.println(inputMessage2);
+    request->send(200, "text/plain", "OK");
+
+    String inputMessage3;
+    String inputParam3;
+
+    if (request->hasParam(PARAM_INPUT_3)) {
+      inputMessage3 = request->getParam(PARAM_INPUT_3)->value();
+      inputParam3 = PARAM_INPUT_3;
+      digitalWrite(relay3, inputMessage3.toInt());
+      relay_3_status = !relay_3_status;
+    } else {
+      inputMessage3 = "No message sent";
+      inputParam3 = "none";
+    }
+    Serial.println(inputMessage3);
+    request->send(200, "text/plain", "OK");
+
+    String inputMessage4;
+    String inputParam4;
+
+    if (request->hasParam(PARAM_INPUT_4)) {
+      inputMessage4 = request->getParam(PARAM_INPUT_4)->value();
+      inputParam4 = PARAM_INPUT_4;
+      digitalWrite(relay4, inputMessage4.toInt());
+      relay_4_status = !relay_4_status;
+    } else {
+      inputMessage4 = "No message sent";
+      inputParam4 = "none";
+    }
+    Serial.println(inputMessage4);
+    request->send(200, "text/plain", "OK");
+
+    String inputMessage5;
+    String inputParam5;
+
+    if (request->hasParam(PARAM_INPUT_5)) {
+      inputMessage5 = request->getParam(PARAM_INPUT_5)->value();
+      inputParam5 = PARAM_INPUT_5;
+      digitalWrite(relay5, inputMessage5.toInt());
+      relay_5_status = !relay_5_status;
+    } else {
+      inputMessage5 = "No message sent";
+      inputParam5 = "none";
+    }
+    Serial.println(inputMessage5);
+    request->send(200, "text/plain", "OK");
+  });
+
+  server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send_P(200, "text/plain", String(t).c_str());
+  });
+
+  server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send_P(200, "text/plain", String(h).c_str());
+  });
+
+  server.on("/jumlahtelur", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send_P(200, "text/plain", String(count).c_str());
+  });
+
+  server.on("/state1", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "text/plain", String(digitalRead(relay1)).c_str());
+  });
+
+  server.on("/state2", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "text/plain", String(digitalRead(relay2)).c_str());
+  });
+
+  server.on("/state3", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "text/plain", String(digitalRead(relay3)).c_str());
+  });
+
+  server.on("/state4", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "text/plain", String(digitalRead(relay4)).c_str());
+  });
+
+  server.on("/state5", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "text/plain", String(digitalRead(relay5)).c_str());
+  });
+
+  server.begin();
+}
+
+void loop() {
+
+  if (digitalRead(13) == HIGH) {
+    unsigned long timeNow = millis();
+    if (timeNow - lastExecutedMillis >= 2000) {
+      lastExecutedMillis = timeNow;
+      count += 1;
+      Serial.print("Jumlah telur = ");
+      Serial.println(count);
+    }
+  }
+
+  unsigned long awalMillis = millis();
+  if (awalMillis - lastlcdDelay == 4900) {
+    lcd.clear();
+  }
+
+  if (awalMillis - lastlcdDelay == 5000) {
+    lcd.setCursor(0, 0);
+    lcd.print("IP address: ");
+    lcd.setCursor(0, 1);
+    lcd.print(WiFi.localIP());
+  }
+
+  if (awalMillis - lastlcdDelay == 9900) {
+    lcd.clear();
+  }
+
+  if (awalMillis - lastlcdDelay == 10000) {
+    lastlcdDelay = awalMillis;
+    lcd.setCursor(0, 0);
+    lcd.print("WiFi connected: ");
+    lcd.setCursor(0, 1);
+    lcd.print(WiFi.SSID());
+  }
+
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= 3000) {
+    previousMillis = currentMillis;
+    float newT = dht.readTemperature();
+    if (isnan(newT)) {
+      Serial.println("Failed to read from DHT sensor!");
+    } else {
+      t = newT;
+      Serial.print("Suhu ");
+      Serial.println(t);
+    }
+
+    float newH = dht.readHumidity();
+    if (isnan(newH)) {
+      Serial.println("Failed to read from DHT sensor!");
+    } else {
+      h = newH;
+      Serial.print("Kelembapan ");
+      Serial.println(h);
+    }
+  }
+
+  int reading1 = digitalRead(switch1);
+  if (reading1 != last_switch_1_status) {
+    lastDebounceTime = millis();  // reset the debouncing timer
+  }
+
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading1 != switch_1_status) {
+      switch_1_status = reading1;
+      if (switch_1_status == HIGH) {
+        relay_1_status = !relay_1_status;
+      }
+    }
+  }
+
+  int reading2 = digitalRead(switch2);
+  if (reading2 != last_switch_2_status) {
+    lastDebounceTime = millis();
+  }
+
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading2 != switch_2_status) {
+      switch_2_status = reading2;
+      if (switch_2_status == HIGH) {
+        relay_2_status = !relay_2_status;
+      }
+    }
+  }
+
+  int reading3 = digitalRead(switch3);
+  if (reading3 != last_switch_3_status) {
+    lastDebounceTime = millis();
+  }
+
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading3 != switch_3_status) {
+      switch_3_status = reading3;
+      if (switch_3_status == HIGH) {
+        relay_3_status = !relay_3_status;
+      }
+    }
+  }
+
+  int reading4 = digitalRead(switch4);
+  if (reading4 != last_switch_4_status) {
+    lastDebounceTime = millis();
+  }
+
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading4 != switch_4_status) {
+      switch_4_status = reading4;
+      if (switch_4_status == HIGH) {
+        relay_4_status = !relay_4_status;
+      }
+    }
+  }
+
+  int reading5 = digitalRead(switch5);
+  if (reading5 != last_switch_5_status) {
+    lastDebounceTime = millis();
+  }
+
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading5 != switch_5_status) {
+      switch_5_status = reading5;
+      if (switch_5_status == HIGH) {
+        relay_5_status = !relay_5_status;
+      }
+    }
+  }
+  // set the LED:
+  digitalWrite(relay1, relay_1_status);
+  digitalWrite(relay2, relay_2_status);
+  digitalWrite(relay3, relay_3_status);
+  digitalWrite(relay4, relay_4_status);
+  digitalWrite(relay5, relay_5_status);
+
+  // save the reading. Next time through the loop, it'll be the lastButtonState:
+  last_switch_1_status = reading1;
+  last_switch_2_status = reading2;
+  last_switch_3_status = reading3;
+  last_switch_4_status = reading4;
+  last_switch_5_status = reading5;
+}
